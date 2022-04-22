@@ -1,4 +1,4 @@
-from typing import List, Any
+from typing import List, Optional
 
 from fastapi import Body, Depends, FastAPI
 from pydantic import BaseModel
@@ -28,10 +28,21 @@ def get_db():
         print("Closed!")
 
 
+class DepartmentSchema(BaseModel):
+    id: Optional[int]
+    name: str
+
+    class Config:
+        orm_mode = True
+
+
 class StudentResponse(BaseModel):
     id: int
     name: str
     is_active: bool
+    # department_id: int
+
+    department: DepartmentSchema
     courses: list = []
     backlog_subjects: list = []
 
@@ -65,8 +76,10 @@ class Student(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(Text, nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"))
     is_active = Column(Boolean, default=True)
 
+    department = relationship("Department")
     backlog_subjects = relationship("Backlog")  # This is what One-To-Many relationship
     courses = relationship(
         "Course", secondary=StudentCourse.__table__, back_populates="students"
@@ -93,6 +106,13 @@ class Backlog(Base):
     student_id = Column(Integer, ForeignKey("students.id"))
 
 
+class Department(Base):
+    __tablename__ = "departments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(Text, nullable=False)
+
+
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
@@ -110,7 +130,9 @@ def get_students(db: Session = Depends(get_db)):
 @app.post("/students")
 def create_student(input_data: dict = Body(...), db: Session = Depends(get_db)):
     print(input_data)
-    student = Student(name=input_data["name"])
+    student = Student(
+        name=input_data["name"], department_id=input_data["department_id"]
+    )
     db.add(student)
     db.commit()
     db.refresh(student)
@@ -158,3 +180,20 @@ def add_backlog(input_data: dict = Body(...), db: Session = Depends(get_db)):
     db.refresh(backlog)
 
     return backlog
+
+
+@app.get("/departments")
+def get_departments(db: Session = Depends(get_db)):
+    backlogs = db.query(Department).all()
+    print(backlogs)
+    return backlogs
+
+
+@app.post("/departments")
+def add_departments(input_data: dict = Body(...), db: Session = Depends(get_db)):
+    dept = Department(name=input_data["name"])
+    db.add(dept)
+    db.commit()
+    db.refresh(dept)
+
+    return dept
