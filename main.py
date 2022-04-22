@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Any
 
 from fastapi import Body, Depends, FastAPI
 from pydantic import BaseModel
@@ -33,6 +33,7 @@ class StudentResponse(BaseModel):
     name: str
     is_active: bool
     courses: list = []
+    backlog_subjects: list = []
 
     class Config:
         orm_mode = True
@@ -66,6 +67,7 @@ class Student(Base):
     name = Column(Text, nullable=False)
     is_active = Column(Boolean, default=True)
 
+    backlog_subjects = relationship("Backlog")  # This is what One-To-Many relationship
     courses = relationship(
         "Course", secondary=StudentCourse.__table__, back_populates="students"
     )
@@ -73,12 +75,22 @@ class Student(Base):
 
 class Course(Base):
     __tablename__ = "courses"
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(Text, nullable=False)
 
     students = relationship(
         "Student", secondary=StudentCourse.__table__, back_populates="courses"
     )
+
+
+class Backlog(Base):
+    __tablename__ = "backlogs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subject_name = Column(Text, nullable=False)
+    is_cleared = Column(Boolean, default=True)
+    student_id = Column(Integer, ForeignKey("students.id"))
 
 
 Base.metadata.create_all(bind=engine)
@@ -127,3 +139,22 @@ def add_course_to_student(
     db.refresh(student_has_course)
 
     return student_has_course
+
+
+@app.get("/backlogs")
+def get_backlog(db: Session = Depends(get_db)):
+    backlogs = db.query(Backlog).all()
+    print(backlogs)
+    return backlogs
+
+
+@app.post("/backlogs")
+def add_backlog(input_data: dict = Body(...), db: Session = Depends(get_db)):
+    backlog = Backlog(
+        subject_name=input_data["subject_name"], student_id=input_data["student_id"]
+    )
+    db.add(backlog)
+    db.commit()
+    db.refresh(backlog)
+
+    return backlog
